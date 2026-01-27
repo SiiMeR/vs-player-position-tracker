@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CakeBuild", "CakeBuild\CakeBuild.csproj", "{ED90A684-78F9-4923-9CAC-105807FBA9A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PlayerPositionTracker", "PlayerPositionTracker\PlayerPositionTracker.csproj", "{926CAD7D-7D82-4184-84EE-01D8080A9EC2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ED90A684-78F9-4923-9CAC-105807FBA9A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED90A684-78F9-4923-9CAC-105807FBA9A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED90A684-78F9-4923-9CAC-105807FBA9A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED90A684-78F9-4923-9CAC-105807FBA9A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{926CAD7D-7D82-4184-84EE-01D8080A9EC2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{926CAD7D-7D82-4184-84EE-01D8080A9EC2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{926CAD7D-7D82-4184-84EE-01D8080A9EC2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{926CAD7D-7D82-4184-84EE-01D8080A9EC2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,14 @@
+{
+    "type": "code",
+    "modid": "playerpositiontracker",
+    "name": "PlayerPositionTracker",
+    "authors": [
+        "SiiMeR"
+    ],
+    "description": "Logs down the position of connected players every once in a while.",
+    "version": "1.1.0",
+    "dependencies": {
+        "game": ""
+    },
+    "Side": "Server"
+}
