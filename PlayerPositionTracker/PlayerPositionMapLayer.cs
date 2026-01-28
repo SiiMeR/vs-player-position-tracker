@@ -61,6 +61,10 @@ public class PlayerPositionMapLayer : MapLayer
 
     public override void OnMapOpenedClient()
     {
+        if (_currentRecords.Count > 0)
+        {
+            RebuildComponents();
+        }
     }
 
     public override void OnMapClosedClient()
@@ -197,6 +201,13 @@ public class PlayerPositionMapLayer : MapLayer
             _filteredPlayerUids = _selectedPlayerFilter == "__all__"
                 ? new HashSet<string>(allUids)
                 : new HashSet<string> { _selectedPlayerFilter };
+        }
+
+        if (_selectedDate == null && _availableDates.Count > 0 && _currentRecords.Count == 0)
+        {
+            _selectedDate = _availableDates[0];
+            _modSystem.RequestDateData(_selectedDate, _selectedPlayerFilter);
+            return;
         }
 
         RebuildComponents();
