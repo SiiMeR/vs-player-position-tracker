@@ -9,22 +9,24 @@ namespace PlayerPositionTracker;
 public class PositionMapComponent : MapComponent
 {
     private readonly Vec3d _position;
-    private readonly string _playerUid;
+    private readonly string _playerName;
     private readonly string _timestamp;
+    private readonly float _yaw;
     private readonly LoadedTexture _texture;
     private readonly MeshRef _quadModel;
     private Vec2f _viewPos = new();
     private readonly Matrixf _mvMat = new();
 
-    public PositionMapComponent(ICoreClientAPI capi, LoadedTexture texture, Vec3d position, string playerUid,
-        string timestamp)
+    public PositionMapComponent(ICoreClientAPI capi, LoadedTexture texture, Vec3d position, string playerName,
+        string timestamp, float yaw)
         : base(capi)
     {
         _quadModel = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
         _texture = texture;
         _position = position;
-        _playerUid = playerUid;
+        _playerName = playerName;
         _timestamp = timestamp;
+        _yaw = yaw;
     }
 
     public override void Render(GuiElementMap map, float dt)
@@ -53,6 +55,7 @@ public class PositionMapComponent : MapComponent
 
         _mvMat.Set(api.Render.CurrentModelviewMatrix)
             .Translate(x, y, 60f)
+            .RotateZ(0f - _yaw + (float)Math.PI)
             .Scale(_texture.Width, _texture.Height, 0f)
             .Scale(0.5f, 0.5f, 0f);
 
@@ -77,7 +80,7 @@ public class PositionMapComponent : MapComponent
 
         if (Math.Abs((double)vec.X - dx) < threshold && Math.Abs((double)vec.Y - dy) < threshold)
         {
-            hoverText.AppendLine($"{_playerUid} @ {_timestamp}");
+            hoverText.AppendLine(_playerName);
         }
     }
 }

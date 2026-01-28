@@ -10,19 +10,35 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Util;
 using Vintagestory.GameContent;
 
+using Lang = Vintagestory.API.Config.Lang;
+
 namespace PlayerPositionTracker;
 
 public class PlayerPositionMapLayer : MapLayer
 {
+    private static readonly double[][] PlayerColors =
+    {
+        new[] { 1.0, 0.2, 0.2, 1.0 },
+        new[] { 0.2, 0.6, 1.0, 1.0 },
+        new[] { 0.2, 1.0, 0.3, 1.0 },
+        new[] { 1.0, 0.8, 0.1, 1.0 },
+        new[] { 0.8, 0.3, 1.0, 1.0 },
+        new[] { 1.0, 0.5, 0.0, 1.0 },
+        new[] { 0.0, 1.0, 0.8, 1.0 },
+        new[] { 1.0, 0.4, 0.7, 1.0 },
+    };
+
     private ICoreClientAPI _capi;
     private PlayerPositionTrackerModSystem _modSystem;
-    private LoadedTexture _dotTexture;
+    private readonly Dictionary<string, LoadedTexture> _playerTextures = new();
 
     private List<string> _availableDates = new();
     private List<PlayerPositionRecord> _currentRecords = new();
     private List<PositionMapComponent> _components = new();
+    private Dictionary<string, string> _playerNames = new();
     private string _selectedDate;
     private int _sliderValue;
+    private HashSet<string> _filteredPlayerUids = new();
 
     public override string Title => "Player Position History";
     public override EnumMapAppSide DataSide => EnumMapAppSide.Server;
@@ -42,7 +58,6 @@ public class PlayerPositionMapLayer : MapLayer
 
     public override void OnMapOpenedClient()
     {
-        CreateDotTexture();
         _modSystem.RequestDateData("");
     }
 
@@ -54,8 +69,14 @@ public class PlayerPositionMapLayer : MapLayer
     public override void ComposeDialogExtras(GuiDialogWorldMap guiDialogWorldMap, GuiComposer compo)
     {
         var key = "worldmap-layer-" + LayerGroupCode;
-        var dates = _availableDates.Count > 0 ? _availableDates.ToArray() : new[] { "(no data)" };
+        var noData = Lang.Get("playerpositiontracker:no-data");
+        var dates = _availableDates.Count > 0 ? _availableDates.ToArray() : new[] { noData };
         var selectedIndex = _selectedDate != null ? Math.Max(0, dates.IndexOf(_selectedDate)) : 0;
+
+        var playerUids = _currentRecords.Select(r => r.PlayerUid).Distinct().OrderBy(uid =>
+            _playerNames.TryGetValue(uid, out var n) ? n : uid).ToArray();
+        var playerLabels = playerUids.Select(uid =>
+            _playerNames.TryGetValue(uid, out var n) ? n : uid).ToArray();
 
         var bounds = ElementStdBounds.AutosizedMainDialog
             .WithFixedPosition(
@@ -69,23 +90,38 @@ public class PlayerPositionMapLayer : MapLayer
         var tickCount = GetDistinctTimestampCount();
         var maxSlider = Math.Max(1, tickCount - 1);
 
-        guiDialogWorldMap.Composers[key] = _capi.Gui.CreateCompo(key, bounds)
+        var composer = _capi.Gui.CreateCompo(key, bounds)
             .AddShadedDialogBG(bgBounds, withTitleBar: false)
-            .AddDialogTitleBar("Position History", () => { guiDialogWorldMap.Composers[key].Enabled = false; })
+            .AddDialogTitleBar(Lang.Get("playerpositiontracker:dialog-title"), () => { guiDialogWorldMap.Composers[key].Enabled = false; })
             .BeginChildElements(bgBounds)
-            .AddStaticText("Date:", CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 30, 60, 25))
+            .AddStaticText(Lang.Get("playerpositiontracker:label-date"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 30, 60, 25))
             .AddDropDown(
                 dates, dates, selectedIndex,
                 OnDateSelected,
-                ElementBounds.Fixed(60, 30, 140, 25),
+                ElementBounds.Fixed(60, 27, 140, 25),
                 "dateDropdown")
-            .AddStaticText("Time:", CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 70, 60, 25))
-            .AddSlider(OnSliderChanged, ElementBounds.Fixed(60, 70, 250, 30), "timeSlider")
-            .EndChildElements()
-            .Compose();
+            .AddStaticText(Lang.Get("playerpositiontracker:label-time"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 70, 60, 25))
+            .AddSlider(OnSliderChanged, ElementBounds.Fixed(60, 65, 250, 30), "timeSlider")
+            .AddDynamicText("", CairoFont.WhiteSmallText(), ElementBounds.Fixed(60, 105, 310, 25), "timeDisplay")
+            .AddStaticText(Lang.Get("playerpositiontracker:label-player"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 140, 60, 25));
+
+        if (playerUids.Length > 0)
+        {
+            composer.AddDropDown(
+                new[] { "__all__" }.Concat(playerUids).ToArray(),
+                new[] { Lang.Get("playerpositiontracker:all-players") }.Concat(playerLabels).ToArray(),
+                0,
+                OnPlayerFilterChanged,
+                ElementBounds.Fixed(60, 138, 140, 25),
+                "playerFilter");
+        }
+
+        guiDialogWorldMap.Composers[key] = composer.EndChildElements().Compose();
 
         var slider = guiDialogWorldMap.Composers[key].GetSlider("timeSlider");
         slider?.SetValues(Math.Min(_sliderValue, maxSlider), 0, maxSlider, 1);
+
+        UpdateTimeDisplay(guiDialogWorldMap.Composers[key]);
 
         guiDialogWorldMap.Composers[key].Enabled = false;
     }
@@ -116,7 +152,7 @@ public class PlayerPositionMapLayer : MapLayer
         }
 
         DisposeComponents();
-        _dotTexture?.Dispose();
+        DisposePlayerTextures();
     }
 
     private void OnPositionDataReceived(PositionDataResponse response)
@@ -128,9 +164,15 @@ public class PlayerPositionMapLayer : MapLayer
             _availableDates = response.AvailableDates;
         }
 
+        if (response.PlayerNames != null)
+        {
+            _playerNames = response.PlayerNames;
+        }
+
         if (response.Records != null && response.Records.Count > 0)
         {
             _currentRecords = response.Records;
+            _filteredPlayerUids = new HashSet<string>(_currentRecords.Select(r => r.PlayerUid).Distinct());
             _capi?.Logger.Debug($"[MapLayer] Received {_currentRecords.Count} records, " +
                                 $"{GetDistinctTimestampCount()} distinct timestamps");
         }
@@ -141,7 +183,7 @@ public class PlayerPositionMapLayer : MapLayer
 
     private void OnDateSelected(string date, bool selected)
     {
-        if (date == "(no data)") return;
+        if (date == Lang.Get("playerpositiontracker:no-data")) return;
         _selectedDate = date;
         _sliderValue = 0;
         _capi?.Logger.Debug($"[MapLayer] Date selected: {date}");
@@ -152,43 +194,98 @@ public class PlayerPositionMapLayer : MapLayer
     {
         _sliderValue = value;
         RebuildComponents();
+        UpdateTimeDisplayInDialog();
         return true;
     }
 
-    private void CreateDotTexture()
+    private void OnPlayerFilterChanged(string uid, bool selected)
     {
-        _dotTexture?.Dispose();
-        int size = (int)GuiElement.scaled(32.0);
-        ImageSurface surface = new ImageSurface(Format.Argb32, size, size);
-        Context ctx = new Context(surface);
-        ctx.SetSourceRGBA(0.0, 0.0, 0.0, 0.0);
-        ctx.Paint();
-        _capi.Gui.Icons.DrawMapPlayer(ctx, 0, 0, size, size,
-            new double[] { 0.0, 0.0, 0.0, 1.0 },
-            new double[] { 1.0, 0.2, 0.2, 1.0 });
-        _dotTexture = new LoadedTexture(_capi, _capi.Gui.LoadCairoTexture(surface, false), size / 2, size / 2);
-        ctx.Dispose();
-        ((Surface)surface).Dispose();
+        var allUids = _currentRecords.Select(r => r.PlayerUid).Distinct();
+        _filteredPlayerUids = uid == "__all__"
+            ? new HashSet<string>(allUids)
+            : new HashSet<string> { uid };
+        RebuildComponents();
+    }
+
+    private void UpdateTimeDisplayInDialog()
+    {
+        if (_capi == null) return;
+        var mapManager = _capi.ModLoader.GetModSystem<WorldMapManager>();
+        if (mapManager.worldMapDlg == null) return;
+        var key = "worldmap-layer-" + LayerGroupCode;
+        if (!mapManager.worldMapDlg.Composers.ContainsKey(key)) return;
+        UpdateTimeDisplay(mapManager.worldMapDlg.Composers[key]);
+    }
+
+    private void UpdateTimeDisplay(GuiComposer composer)
+    {
+        var textElem = composer.GetDynamicText("timeDisplay");
+        if (textElem == null) return;
+        var timestamps = _currentRecords.Select(r => r.Timestamp).Distinct().OrderBy(t => t).ToList();
+        if (_sliderValue < timestamps.Count && DateTime.TryParse(timestamps[_sliderValue], out var utcTime))
+        {
+            var local = utcTime.ToLocalTime();
+            var tz = TimeZoneInfo.Local;
+            var abbr = tz.IsDaylightSavingTime(local) ? tz.DaylightName : tz.StandardName;
+            textElem.SetNewText($"{local:HH:mm:ss} {abbr}");
+        }
+        else
+        {
+            textElem.SetNewText("");
+        }
+    }
+
+    private void EnsurePlayerTextures()
+    {
+        var uids = _currentRecords.Select(r => r.PlayerUid).Distinct().ToList();
+        foreach (var uid in uids)
+        {
+            if (_playerTextures.ContainsKey(uid)) continue;
+            var colorIndex = _playerTextures.Count % PlayerColors.Length;
+            var color = PlayerColors[colorIndex];
+            int size = (int)GuiElement.scaled(32.0);
+            var surface = new ImageSurface(Format.Argb32, size, size);
+            var ctx = new Context(surface);
+            ctx.SetSourceRGBA(0.0, 0.0, 0.0, 0.0);
+            ctx.Paint();
+            _capi.Gui.Icons.DrawMapPlayer(ctx, 0, 0, size, size,
+                new[] { 0.0, 0.0, 0.0, 1.0 }, color);
+            _playerTextures[uid] = new LoadedTexture(_capi, _capi.Gui.LoadCairoTexture(surface, false), size / 2, size / 2);
+            ctx.Dispose();
+            ((Surface)surface).Dispose();
+        }
+    }
+
+    private void DisposePlayerTextures()
+    {
+        foreach (var tex in _playerTextures.Values) tex.Dispose();
+        _playerTextures.Clear();
     }
 
     private void RebuildComponents()
     {
         DisposeComponents();
-        if (_currentRecords.Count == 0 || _dotTexture == null) return;
+        if (_currentRecords.Count == 0) return;
+
+        EnsurePlayerTextures();
 
         var timestamps = _currentRecords.Select(r => r.Timestamp).Distinct().OrderBy(t => t).ToList();
         if (_sliderValue >= timestamps.Count) return;
 
         var targetTimestamp = timestamps[_sliderValue];
-        var filtered = _currentRecords.Where(r => r.Timestamp == targetTimestamp).ToList();
+        var filtered = _currentRecords
+            .Where(r => r.Timestamp == targetTimestamp && _filteredPlayerUids.Contains(r.PlayerUid))
+            .ToList();
 
         _capi?.Logger.Debug($"[MapLayer] Rebuilding: slider={_sliderValue}, timestamp={targetTimestamp}, " +
                             $"showing {filtered.Count} positions");
 
         foreach (var rec in filtered)
         {
+            if (!_playerTextures.TryGetValue(rec.PlayerUid, out var tex)) continue;
             var pos = new Vec3d(rec.X, rec.Y, rec.Z);
-            _components.Add(new PositionMapComponent(_capi, _dotTexture, pos, rec.PlayerUid, rec.Timestamp));
+            var name = _playerNames.TryGetValue(rec.PlayerUid, out var n) ? n : rec.PlayerUid;
+            _components.Add(new PositionMapComponent(_capi, tex, pos, name, rec.Timestamp, rec.Yaw));
         }
     }
 

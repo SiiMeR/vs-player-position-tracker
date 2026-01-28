@@ -74,7 +74,8 @@ public class PlayerPositionTrackerModSystem : ModSystem
                         PlayerUid = player.PlayerUID,
                         X = Math.Round(player.Entity.SidedPos.X, 1),
                         Y = Math.Round(player.Entity.SidedPos.Y, 1),
-                        Z = Math.Round(player.Entity.SidedPos.Z, 1)
+                        Z = Math.Round(player.Entity.SidedPos.Z, 1),
+                        Yaw = player.Entity.SidedPos.Yaw
                     };
                 })
                 .Where(rec => rec != null)
@@ -125,13 +126,21 @@ public class PlayerPositionTrackerModSystem : ModSystem
         var dates = GetAvailableDates();
         var records = !string.IsNullOrEmpty(date) ? GetRecordsForDate(date) : new List<PlayerPositionRecord>();
 
+        var playerNames = new Dictionary<string, string>();
+        foreach (var uid in records.Select(r => r.PlayerUid).Distinct())
+        {
+            var data = _sapi.PlayerData.GetPlayerDataByUid(uid);
+            if (data != null) playerNames[uid] = data.LastKnownPlayername;
+        }
+
         Mod.Logger.Debug($"[Server] Date request from {fromPlayer.PlayerName}: date='{date}', " +
                          $"availableDates={dates.Count}, records={records.Count}");
 
         _serverChannel.SendPacket(new PositionDataResponse
         {
             AvailableDates = dates,
-            Records = records
+            Records = records,
+            PlayerNames = playerNames
         }, fromPlayer);
     }
 
@@ -202,6 +211,9 @@ public class PlayerPositionRecord
 
     [ProtoMember(5)]
     public double Z { get; set; }
+
+    [ProtoMember(6)]
+    public float Yaw { get; set; }
 }
 
 [ProtoContract]
@@ -219,4 +231,7 @@ public class PositionDataResponse
 
     [ProtoMember(2)]
     public List<PlayerPositionRecord> Records { get; set; }
+
+    [ProtoMember(3)]
+    public Dictionary<string, string> PlayerNames { get; set; }
 }

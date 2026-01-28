@@ -1,0 +1,8 @@
+{
+    "playerpositiontracker:dialog-title": "Position History",
+    "playerpositiontracker:label-date": "Date:",
+    "playerpositiontracker:label-time": "Time:",
+    "playerpositiontracker:label-player": "Player:",
+    "playerpositiontracker:no-data": "(no data)",
+    "playerpositiontracker:all-players": "All Players"
+}
