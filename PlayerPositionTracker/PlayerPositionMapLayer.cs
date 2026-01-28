@@ -16,17 +16,27 @@ namespace PlayerPositionTracker;
 
 public class PlayerPositionMapLayer : MapLayer
 {
-    private static readonly double[][] PlayerColors =
+    private static double[] GetPlayerColor(int index)
     {
-        new[] { 1.0, 0.2, 0.2, 1.0 },
-        new[] { 0.2, 0.6, 1.0, 1.0 },
-        new[] { 0.2, 1.0, 0.3, 1.0 },
-        new[] { 1.0, 0.8, 0.1, 1.0 },
-        new[] { 0.8, 0.3, 1.0, 1.0 },
-        new[] { 1.0, 0.5, 0.0, 1.0 },
-        new[] { 0.0, 1.0, 0.8, 1.0 },
-        new[] { 1.0, 0.4, 0.7, 1.0 },
-    };
+        double hue = (index * 0.618033988749895) % 1.0;
+        double saturation = 0.8;
+        double lightness = 0.55;
+        double c = (1 - Math.Abs(2 * lightness - 1)) * saturation;
+        double x = c * (1 - Math.Abs((hue * 6) % 2 - 1));
+        double m = lightness - c / 2;
+        double r, g, b;
+        int sector = (int)(hue * 6);
+        switch (sector)
+        {
+            case 0: r = c; g = x; b = 0; break;
+            case 1: r = x; g = c; b = 0; break;
+            case 2: r = 0; g = c; b = x; break;
+            case 3: r = 0; g = x; b = c; break;
+            case 4: r = x; g = 0; b = c; break;
+            default: r = c; g = 0; b = x; break;
+        }
+        return new[] { r + m, g + m, b + m, 1.0 };
+    }
 
     private ICoreClientAPI _capi;
     private PlayerPositionTrackerModSystem _modSystem;
@@ -305,8 +315,7 @@ public class PlayerPositionMapLayer : MapLayer
         foreach (var uid in uids)
         {
             if (_playerTextures.ContainsKey(uid)) continue;
-            var colorIndex = _playerTextures.Count % PlayerColors.Length;
-            var color = PlayerColors[colorIndex];
+            var color = GetPlayerColor(_playerTextures.Count);
             int size = (int)GuiElement.scaled(32.0);
             var surface = new ImageSurface(Format.Argb32, size, size);
             var ctx = new Context(surface);
