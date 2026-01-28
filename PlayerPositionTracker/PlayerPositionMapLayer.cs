@@ -38,6 +38,7 @@ public class PlayerPositionMapLayer : MapLayer
     private Dictionary<string, string> _playerNames = new();
     private string _selectedDate;
     private int _sliderValue;
+    private string _selectedPlayerFilter = "__all__";
     private HashSet<string> _filteredPlayerUids = new();
 
     public override string Title => "Player Position History";
@@ -54,12 +55,12 @@ public class PlayerPositionMapLayer : MapLayer
             _capi = api as ICoreClientAPI;
             _modSystem.OnResponseReceived += OnPositionDataReceived;
         }
+
+        Active = false;
     }
 
     public override void OnMapOpenedClient()
     {
-        if (!IsClientAuthorized()) return;
-        _modSystem.RequestDateData("");
     }
 
     public override void OnMapClosedClient()
@@ -122,10 +123,12 @@ public class PlayerPositionMapLayer : MapLayer
 
         if (playerUids.Length > 0)
         {
+            var playerValues = new[] { "__all__" }.Concat(playerUids).ToArray();
+            var playerFilterIndex = Math.Max(0, Array.IndexOf(playerValues, _selectedPlayerFilter));
             composer.AddDropDown(
-                new[] { "__all__" }.Concat(playerUids).ToArray(),
+                playerValues,
                 new[] { Lang.Get("playerpositiontracker:all-players") }.Concat(playerLabels).ToArray(),
-                0,
+                playerFilterIndex,
                 OnPlayerFilterChanged,
                 ElementBounds.Fixed(60, 138, 140, 25),
                 "playerFilter");
@@ -190,9 +193,10 @@ public class PlayerPositionMapLayer : MapLayer
         if (response.Records != null && response.Records.Count > 0)
         {
             _currentRecords = response.Records;
-            _filteredPlayerUids = new HashSet<string>(_currentRecords.Select(r => r.PlayerUid).Distinct());
-            _capi?.Logger.Debug($"[MapLayer] Received {_currentRecords.Count} records, " +
-                                $"{GetDistinctTimestampCount()} distinct timestamps");
+            var allUids = _currentRecords.Select(r => r.PlayerUid).Distinct();
+            _filteredPlayerUids = _selectedPlayerFilter == "__all__"
+                ? new HashSet<string>(allUids)
+                : new HashSet<string> { _selectedPlayerFilter };
         }
 
         RebuildComponents();
@@ -204,8 +208,7 @@ public class PlayerPositionMapLayer : MapLayer
         if (date == Lang.Get("playerpositiontracker:no-data")) return;
         _selectedDate = date;
         _sliderValue = 0;
-        _capi?.Logger.Debug($"[MapLayer] Date selected: {date}");
-        _modSystem.RequestDateData(date);
+        _modSystem.RequestDateData(date, _selectedPlayerFilter);
     }
 
     private bool OnSliderChanged(int value)
@@ -220,18 +223,23 @@ public class PlayerPositionMapLayer : MapLayer
     {
         if (!string.IsNullOrEmpty(_selectedDate))
         {
-            _modSystem.RequestDateData(_selectedDate);
+            _modSystem.RequestDateData(_selectedDate, _selectedPlayerFilter);
         }
         return true;
     }
 
     private void OnPlayerFilterChanged(string uid, bool selected)
     {
+        _selectedPlayerFilter = uid;
         var allUids = _currentRecords.Select(r => r.PlayerUid).Distinct();
         _filteredPlayerUids = uid == "__all__"
             ? new HashSet<string>(allUids)
             : new HashSet<string> { uid };
         RebuildComponents();
+        if (!string.IsNullOrEmpty(_selectedDate))
+        {
+            _modSystem.RequestDateData(_selectedDate, _selectedPlayerFilter);
+        }
     }
 
     private void UpdateTimeDisplayInDialog()
@@ -303,9 +311,6 @@ public class PlayerPositionMapLayer : MapLayer
         var filtered = _currentRecords
             .Where(r => r.Timestamp == targetTimestamp && _filteredPlayerUids.Contains(r.PlayerUid))
             .ToList();
-
-        _capi?.Logger.Debug($"[MapLayer] Rebuilding: slider={_sliderValue}, timestamp={targetTimestamp}, " +
-                            $"showing {filtered.Count} positions");
 
         foreach (var rec in filtered)
         {

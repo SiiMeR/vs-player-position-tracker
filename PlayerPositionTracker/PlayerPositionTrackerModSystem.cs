@@ -103,12 +103,12 @@ public class PlayerPositionTrackerModSystem : ModSystem
             .RegisterMessageType<PositionDataResponse>()
             .SetMessageHandler<PositionDataResponse>(OnResponseFromServer);
 
+        WorldMapPatches.Init(api, this);
     }
 
-    public void RequestDateData(string date)
+    public void RequestDateData(string date, string playerFilter = null)
     {
-        Mod.Logger.Debug($"[Client] Requesting data for date: {date}");
-        _clientChannel?.SendPacket(new PositionDataRequest { Date = date ?? "" });
+        _clientChannel?.SendPacket(new PositionDataRequest { Date = date ?? "", PlayerFilter = playerFilter });
     }
 
     public List<string> GetAvailableDates()
@@ -125,7 +125,7 @@ public class PlayerPositionTrackerModSystem : ModSystem
     {
         if (!IsAuthorized(fromPlayer))
         {
-            Mod.Logger.Debug($"[Server] Unauthorized request from {fromPlayer.PlayerName}");
+            Mod.Logger.Warning($"[PlayerPositionTracker] Unauthorized position data request from {fromPlayer.PlayerName}");
             return;
         }
 
@@ -140,8 +140,17 @@ public class PlayerPositionTrackerModSystem : ModSystem
             if (data != null) playerNames[uid] = data.LastKnownPlayername;
         }
 
-        Mod.Logger.Debug($"[Server] Date request from {fromPlayer.PlayerName}: date='{date}', " +
-                         $"availableDates={dates.Count}, records={records.Count}");
+        var dateInfo = string.IsNullOrEmpty(date) ? "available dates" : $"date {date}";
+        var playerFilter = request?.PlayerFilter;
+        string filterInfo;
+        if (string.IsNullOrEmpty(playerFilter) || playerFilter == "__all__")
+            filterInfo = "all players"; 
+        else
+        {
+            var playerData = _sapi.PlayerData.GetPlayerDataByUid(playerFilter);
+            filterInfo = playerData != null ? $"player {playerData.LastKnownPlayername}" : $"player {playerFilter}";
+        }
+        _sapi.Logger.Audit($"[PlayerPositionTracker] {fromPlayer.PlayerName} requested {dateInfo} for {filterInfo}");
 
         _serverChannel.SendPacket(new PositionDataResponse
         {
@@ -159,10 +168,6 @@ public class PlayerPositionTrackerModSystem : ModSystem
 
     private void OnResponseFromServer(PositionDataResponse response)
     {
-        var dateCount = response?.AvailableDates?.Count ?? 0;
-        var recordCount = response?.Records?.Count ?? 0;
-        Mod.Logger.Debug($"[Client] Received response: dates={dateCount}, records={recordCount}");
-
         OnResponseReceived?.Invoke(response);
     }
 
@@ -183,11 +188,9 @@ public class PlayerPositionTrackerModSystem : ModSystem
             }
             catch (Exception e)
             {
-                _sapi.Logger.Error($"Failed to load position data from {file}: {e.Message}");
+                _sapi.Logger.Error($"[PlayerPositionTracker] Failed to load position data from {file}: {e.Message}");
             }
         }
-
-        _sapi.Logger.Debug($"Loaded position data for {_positionsByDate.Count} days.");
     }
 
     private void SaveToDisk()
@@ -198,7 +201,7 @@ public class PlayerPositionTrackerModSystem : ModSystem
             File.WriteAllText(path, JsonUtil.ToString(records));
         }
 
-        _sapi.Logger.Debug($"Saved position data for {_positionsByDate.Count} days.");
+        _sapi.Logger.Debug($"[PlayerPositionTracker] Saved position data for {_positionsByDate.Count} days.");
     }
 }
 
@@ -234,6 +237,9 @@ public class PositionDataRequest
 {
     [ProtoMember(1)]
     public string Date { get; set; }
+
+    [ProtoMember(2)]
+    public string PlayerFilter { get; set; }
 }
 
 [ProtoContract]
