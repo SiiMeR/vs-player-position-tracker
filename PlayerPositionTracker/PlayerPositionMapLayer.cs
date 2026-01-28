@@ -58,6 +58,7 @@ public class PlayerPositionMapLayer : MapLayer
 
     public override void OnMapOpenedClient()
     {
+        if (!IsClientAuthorized()) return;
         _modSystem.RequestDateData("");
     }
 
@@ -69,14 +70,6 @@ public class PlayerPositionMapLayer : MapLayer
     public override void ComposeDialogExtras(GuiDialogWorldMap guiDialogWorldMap, GuiComposer compo)
     {
         var key = "worldmap-layer-" + LayerGroupCode;
-        var noData = Lang.Get("playerpositiontracker:no-data");
-        var dates = _availableDates.Count > 0 ? _availableDates.ToArray() : new[] { noData };
-        var selectedIndex = _selectedDate != null ? Math.Max(0, dates.IndexOf(_selectedDate)) : 0;
-
-        var playerUids = _currentRecords.Select(r => r.PlayerUid).Distinct().OrderBy(uid =>
-            _playerNames.TryGetValue(uid, out var n) ? n : uid).ToArray();
-        var playerLabels = playerUids.Select(uid =>
-            _playerNames.TryGetValue(uid, out var n) ? n : uid).ToArray();
 
         var bounds = ElementStdBounds.AutosizedMainDialog
             .WithFixedPosition(
@@ -86,6 +79,28 @@ public class PlayerPositionMapLayer : MapLayer
 
         var bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
         bgBounds.BothSizing = ElementSizing.FitToChildren;
+
+        if (!IsClientAuthorized())
+        {
+            guiDialogWorldMap.Composers[key] = _capi.Gui.CreateCompo(key, bounds)
+                .AddShadedDialogBG(bgBounds, withTitleBar: false)
+                .AddDialogTitleBar(Lang.Get("playerpositiontracker:dialog-title"), () => { guiDialogWorldMap.Composers[key].Enabled = false; })
+                .BeginChildElements(bgBounds)
+                .AddStaticText(Lang.Get("playerpositiontracker:unauthorized"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 30, 300, 25))
+                .EndChildElements()
+                .Compose();
+            guiDialogWorldMap.Composers[key].Enabled = false;
+            return;
+        }
+
+        var noData = Lang.Get("playerpositiontracker:no-data");
+        var dates = _availableDates.Count > 0 ? _availableDates.ToArray() : new[] { noData };
+        var selectedIndex = _selectedDate != null ? Math.Max(0, dates.IndexOf(_selectedDate)) : 0;
+
+        var playerUids = _currentRecords.Select(r => r.PlayerUid).Distinct().OrderBy(uid =>
+            _playerNames.TryGetValue(uid, out var n) ? n : uid).ToArray();
+        var playerLabels = playerUids.Select(uid =>
+            _playerNames.TryGetValue(uid, out var n) ? n : uid).ToArray();
 
         var tickCount = GetDistinctTimestampCount();
         var maxSlider = Math.Max(1, tickCount - 1);
@@ -116,6 +131,9 @@ public class PlayerPositionMapLayer : MapLayer
                 "playerFilter");
         }
 
+        composer.AddSmallButton(Lang.Get("playerpositiontracker:refresh"), OnRefreshClicked,
+            ElementBounds.Fixed(0, 175, 100, 25));
+
         guiDialogWorldMap.Composers[key] = composer.EndChildElements().Compose();
 
         var slider = guiDialogWorldMap.Composers[key].GetSlider("timeSlider");
@@ -128,7 +146,7 @@ public class PlayerPositionMapLayer : MapLayer
 
     public override void Render(GuiElementMap mapElem, float dt)
     {
-        if (!Active) return;
+        if (!Active || !IsClientAuthorized()) return;
         foreach (var comp in _components)
         {
             comp.Render(mapElem, dt);
@@ -137,7 +155,7 @@ public class PlayerPositionMapLayer : MapLayer
 
     public override void OnMouseMoveClient(MouseEvent args, GuiElementMap mapElem, StringBuilder hoverText)
     {
-        if (!Active) return;
+        if (!Active || !IsClientAuthorized()) return;
         foreach (var comp in _components)
         {
             comp.OnMouseMove(args, mapElem, hoverText);
@@ -195,6 +213,15 @@ public class PlayerPositionMapLayer : MapLayer
         _sliderValue = value;
         RebuildComponents();
         UpdateTimeDisplayInDialog();
+        return true;
+    }
+
+    private bool OnRefreshClicked()
+    {
+        if (!string.IsNullOrEmpty(_selectedDate))
+        {
+            _modSystem.RequestDateData(_selectedDate);
+        }
         return true;
     }
 
@@ -297,6 +324,13 @@ public class PlayerPositionMapLayer : MapLayer
         }
 
         _components.Clear();
+    }
+
+    private bool IsClientAuthorized()
+    {
+        var player = _capi?.World?.Player;
+        return player?.Role?.Code == "admin" &&
+               player.WorldData?.CurrentGameMode == EnumGameMode.Creative;
     }
 
     private int GetDistinctTimestampCount()

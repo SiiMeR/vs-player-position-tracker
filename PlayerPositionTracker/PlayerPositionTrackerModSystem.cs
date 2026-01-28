@@ -102,6 +102,7 @@ public class PlayerPositionTrackerModSystem : ModSystem
             .RegisterMessageType<PositionDataRequest>()
             .RegisterMessageType<PositionDataResponse>()
             .SetMessageHandler<PositionDataResponse>(OnResponseFromServer);
+
     }
 
     public void RequestDateData(string date)
@@ -122,6 +123,12 @@ public class PlayerPositionTrackerModSystem : ModSystem
 
     private void OnDateRequestFromClient(IServerPlayer fromPlayer, PositionDataRequest request)
     {
+        if (!IsAuthorized(fromPlayer))
+        {
+            Mod.Logger.Debug($"[Server] Unauthorized request from {fromPlayer.PlayerName}");
+            return;
+        }
+
         var date = request?.Date;
         var dates = GetAvailableDates();
         var records = !string.IsNullOrEmpty(date) ? GetRecordsForDate(date) : new List<PlayerPositionRecord>();
@@ -142,6 +149,12 @@ public class PlayerPositionTrackerModSystem : ModSystem
             Records = records,
             PlayerNames = playerNames
         }, fromPlayer);
+    }
+
+    private static bool IsAuthorized(IPlayer player)
+    {
+        return player.Role?.Code == "admin" &&
+               player.WorldData?.CurrentGameMode == EnumGameMode.Creative;
     }
 
     private void OnResponseFromServer(PositionDataResponse response)
@@ -235,3 +248,4 @@ public class PositionDataResponse
     [ProtoMember(3)]
     public Dictionary<string, string> PlayerNames { get; set; }
 }
+
