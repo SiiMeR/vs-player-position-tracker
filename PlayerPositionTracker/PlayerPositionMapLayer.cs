@@ -251,6 +251,24 @@ public class PlayerPositionMapLayer : MapLayer
         {
             _modSystem.RequestDateData(_selectedDate, _selectedPlayerFilter);
         }
+        if (uid != "__all__")
+        {
+            CenterMapOnPlayer(uid);
+        }
+    }
+
+    private void CenterMapOnPlayer(string playerUid)
+    {
+        var timestamps = _currentRecords.Select(r => r.Timestamp).Distinct().OrderBy(t => t).ToList();
+        if (_sliderValue >= timestamps.Count) return;
+
+        var targetTimestamp = timestamps[_sliderValue];
+        var record = _currentRecords.FirstOrDefault(r => r.Timestamp == targetTimestamp && r.PlayerUid == playerUid);
+        if (record == null) return;
+
+        var mapManager = _capi.ModLoader.GetModSystem<WorldMapManager>();
+        var mapElem = mapManager.worldMapDlg?.SingleComposer?.GetElement("mapElem") as GuiElementMap;
+        mapElem?.CenterMapTo(new BlockPos((int)record.X, (int)record.Y, (int)record.Z));
     }
 
     private void UpdateTimeDisplayInDialog()

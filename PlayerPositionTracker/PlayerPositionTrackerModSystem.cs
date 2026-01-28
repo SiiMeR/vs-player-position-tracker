@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using ProtoBuf;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -17,10 +19,12 @@ public class PlayerPositionTrackerModSystem : ModSystem
     private const string ChannelName = "playerpositiontracker";
     private string _directory;
     private readonly Dictionary<string, List<PlayerPositionRecord>> _positionsByDate = new();
+    private static readonly HttpClient HttpClient = new();
 
     private ICoreServerAPI _sapi;
     private IServerNetworkChannel _serverChannel;
     private IClientNetworkChannel _clientChannel;
+    private PlayerPositionTrackerConfig _config;
 
     public event Action<PositionDataResponse> OnResponseReceived;
 
@@ -39,13 +43,13 @@ public class PlayerPositionTrackerModSystem : ModSystem
             Directory.CreateDirectory(_directory);
         }
 
-        var config = api.LoadModConfig<PlayerPositionTrackerConfig>(ModConfigFileName);
-        if (config == null)
+        _config = api.LoadModConfig<PlayerPositionTrackerConfig>(ModConfigFileName);
+        if (_config == null)
         {
-            config = new PlayerPositionTrackerConfig();
+            _config = new PlayerPositionTrackerConfig();
         }
 
-        api.StoreModConfig(config, ModConfigFileName);
+        api.StoreModConfig(_config, ModConfigFileName);
 
         api.Event.SaveGameLoaded += LoadFromDisk;
         api.Event.GameWorldSave += SaveToDisk;
@@ -93,7 +97,7 @@ public class PlayerPositionTrackerModSystem : ModSystem
             }
 
             list.AddRange(records);
-        }, config.PositionUpdateIntervalSeconds * 1000);
+        }, _config.PositionUpdateIntervalSeconds * 1000);
     }
 
     public override void StartClientSide(ICoreClientAPI api)
@@ -150,7 +154,9 @@ public class PlayerPositionTrackerModSystem : ModSystem
             var playerData = _sapi.PlayerData.GetPlayerDataByUid(playerFilter);
             filterInfo = playerData != null ? $"player {playerData.LastKnownPlayername}" : $"player {playerFilter}";
         }
-        _sapi.Logger.Audit($"[PlayerPositionTracker] {fromPlayer.PlayerName} requested {dateInfo} for {filterInfo}");
+        var auditMessage = $"[PlayerPositionTracker] {fromPlayer.PlayerName} requested {dateInfo} for {filterInfo}";
+        _sapi.Logger.Audit(auditMessage);
+        SendDiscordAudit(auditMessage);
 
         _serverChannel.SendPacket(new PositionDataResponse
         {
@@ -164,6 +170,26 @@ public class PlayerPositionTrackerModSystem : ModSystem
     {
         return player.Role?.Code == "admin" &&
                player.WorldData?.CurrentGameMode == EnumGameMode.Creative;
+    }
+
+    private void SendDiscordAudit(string message)
+    {
+        if (string.IsNullOrEmpty(_config?.DiscordBotToken) || string.IsNullOrEmpty(_config?.DiscordChannelId))
+            return;
+
+        try
+        {
+            var url = $"https://discord.com/api/v10/channels/{_config.DiscordChannelId}/messages";
+            var json = $"{{\"content\":\"{message.Replace("\"", "\\\"").Replace("\n", "\\n")}\"}}";
+            var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.Add("Authorization", $"Bot {_config.DiscordBotToken}");
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            HttpClient.SendAsync(request);
+        }
+        catch (Exception e)
+        {
+            _sapi.Logger.Warning($"[PlayerPositionTracker] Failed to send Discord audit: {e.Message}");
+        }
     }
 
     private void OnResponseFromServer(PositionDataResponse response)
@@ -208,6 +234,8 @@ public class PlayerPositionTrackerModSystem : ModSystem
 public class PlayerPositionTrackerConfig
 {
     public int PositionUpdateIntervalSeconds { get; set; } = 60;
+    public string DiscordBotToken { get; set; } = "";
+    public string DiscordChannelId { get; set; } = "";
 }
 
 [ProtoContract]
