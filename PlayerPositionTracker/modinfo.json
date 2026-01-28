@@ -10,5 +10,5 @@
     "dependencies": {
         "game": ""
     },
-    "Side": "Server"
+    "Side": "Universal"
 }

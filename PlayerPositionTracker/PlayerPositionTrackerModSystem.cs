@@ -2,19 +2,33 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using ProtoBuf;
+using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
+using Vintagestory.GameContent;
 
 namespace PlayerPositionTracker;
 
 public class PlayerPositionTrackerModSystem : ModSystem
 {
     private const string ModConfigFileName = "playerpositiontrackerconfig.json";
+    private const string ChannelName = "playerpositiontracker";
     private string _directory;
     private readonly Dictionary<string, List<PlayerPositionRecord>> _positionsByDate = new();
 
     private ICoreServerAPI _sapi;
+    private IServerNetworkChannel _serverChannel;
+    private IClientNetworkChannel _clientChannel;
+
+    public event Action<PositionDataResponse> OnResponseReceived;
+
+    public override void Start(ICoreAPI api)
+    {
+        var mapManager = api.ModLoader.GetModSystem<WorldMapManager>();
+        mapManager.RegisterMapLayer<PlayerPositionMapLayer>("playerpositiontracker", 0.75);
+    }
 
     public override void StartServerSide(ICoreServerAPI api)
     {
@@ -33,9 +47,13 @@ public class PlayerPositionTrackerModSystem : ModSystem
 
         api.StoreModConfig(config, ModConfigFileName);
 
-
         api.Event.SaveGameLoaded += LoadFromDisk;
         api.Event.GameWorldSave += SaveToDisk;
+
+        _serverChannel = api.Network.RegisterChannel(ChannelName)
+            .RegisterMessageType<PositionDataRequest>()
+            .RegisterMessageType<PositionDataResponse>()
+            .SetMessageHandler<PositionDataRequest>(OnDateRequestFromClient);
 
         api.Event.RegisterGameTickListener(_ =>
         {
@@ -77,6 +95,20 @@ public class PlayerPositionTrackerModSystem : ModSystem
         }, config.PositionUpdateIntervalSeconds * 1000);
     }
 
+    public override void StartClientSide(ICoreClientAPI api)
+    {
+        _clientChannel = api.Network.RegisterChannel(ChannelName)
+            .RegisterMessageType<PositionDataRequest>()
+            .RegisterMessageType<PositionDataResponse>()
+            .SetMessageHandler<PositionDataResponse>(OnResponseFromServer);
+    }
+
+    public void RequestDateData(string date)
+    {
+        Mod.Logger.Debug($"[Client] Requesting data for date: {date}");
+        _clientChannel?.SendPacket(new PositionDataRequest { Date = date ?? "" });
+    }
+
     public List<string> GetAvailableDates()
     {
         return _positionsByDate.Keys.OrderBy(k => k).ToList();
@@ -85,6 +117,31 @@ public class PlayerPositionTrackerModSystem : ModSystem
     public List<PlayerPositionRecord> GetRecordsForDate(string date)
     {
         return _positionsByDate.TryGetValue(date, out var list) ? list : new List<PlayerPositionRecord>();
+    }
+
+    private void OnDateRequestFromClient(IServerPlayer fromPlayer, PositionDataRequest request)
+    {
+        var date = request?.Date;
+        var dates = GetAvailableDates();
+        var records = !string.IsNullOrEmpty(date) ? GetRecordsForDate(date) : new List<PlayerPositionRecord>();
+
+        Mod.Logger.Debug($"[Server] Date request from {fromPlayer.PlayerName}: date='{date}', " +
+                         $"availableDates={dates.Count}, records={records.Count}");
+
+        _serverChannel.SendPacket(new PositionDataResponse
+        {
+            AvailableDates = dates,
+            Records = records
+        }, fromPlayer);
+    }
+
+    private void OnResponseFromServer(PositionDataResponse response)
+    {
+        var dateCount = response?.AvailableDates?.Count ?? 0;
+        var recordCount = response?.Records?.Count ?? 0;
+        Mod.Logger.Debug($"[Client] Received response: dates={dateCount}, records={recordCount}");
+
+        OnResponseReceived?.Invoke(response);
     }
 
     private void LoadFromDisk()
@@ -128,11 +185,38 @@ public class PlayerPositionTrackerConfig
     public int PositionUpdateIntervalSeconds { get; set; } = 60;
 }
 
+[ProtoContract]
 public class PlayerPositionRecord
 {
+    [ProtoMember(1)]
     public string Timestamp { get; set; }
+
+    [ProtoMember(2)]
     public string PlayerUid { get; set; }
+
+    [ProtoMember(3)]
     public double X { get; set; }
+
+    [ProtoMember(4)]
     public double Y { get; set; }
+
+    [ProtoMember(5)]
     public double Z { get; set; }
+}
+
+[ProtoContract]
+public class PositionDataRequest
+{
+    [ProtoMember(1)]
+    public string Date { get; set; }
+}
+
+[ProtoContract]
+public class PositionDataResponse
+{
+    [ProtoMember(1)]
+    public List<string> AvailableDates { get; set; }
+
+    [ProtoMember(2)]
+    public List<PlayerPositionRecord> Records { get; set; }
 }
