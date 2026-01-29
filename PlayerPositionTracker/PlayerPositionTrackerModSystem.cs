@@ -17,21 +17,21 @@ public class PlayerPositionTrackerModSystem : ModSystem
 {
     private const string ModConfigFileName = "playerpositiontrackerconfig.json";
     private const string ChannelName = "playerpositiontracker";
-    private string _directory;
-    private readonly Dictionary<string, List<PlayerPositionRecord>> _positionsByDate = new();
     private static readonly HttpClient HttpClient = new();
+    private readonly Dictionary<string, List<PlayerPositionRecord>> _positionsByDate = new();
+    private IClientNetworkChannel _clientChannel;
+    private PlayerPositionTrackerConfig _config;
+    private string _directory;
 
     private ICoreServerAPI _sapi;
     private IServerNetworkChannel _serverChannel;
-    private IClientNetworkChannel _clientChannel;
-    private PlayerPositionTrackerConfig _config;
 
     public event Action<PositionDataResponse> OnResponseReceived;
 
     public override void Start(ICoreAPI api)
     {
         var mapManager = api.ModLoader.GetModSystem<WorldMapManager>();
-        mapManager.RegisterMapLayer<PlayerPositionMapLayer>("playerpositiontracker", 0.75);
+        mapManager.RegisterMapLayer<PlayerPositionMapLayer>("playerpositiontracker", 3.0);
     }
 
     public override void StartServerSide(ICoreServerAPI api)
@@ -65,24 +65,17 @@ public class PlayerPositionTrackerModSystem : ModSystem
             var dateKey = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
             var records = api.World.AllOnlinePlayers
-                .Select(player =>
+                .Where(player => (player as IServerPlayer)?.ConnectionState == EnumClientState.Playing)
+                .Where(player => player?.Entity?.SidedPos != null && !string.IsNullOrEmpty(player?.PlayerUID))
+                .Select(player => new PlayerPositionRecord
                 {
-                    if (player.Entity?.SidedPos == null || string.IsNullOrEmpty(player.PlayerUID))
-                    {
-                        return null;
-                    }
-
-                    return new PlayerPositionRecord
-                    {
-                        Timestamp = now,
-                        PlayerUid = player.PlayerUID,
-                        X = Math.Round(player.Entity.SidedPos.X, 1),
-                        Y = Math.Round(player.Entity.SidedPos.Y, 1),
-                        Z = Math.Round(player.Entity.SidedPos.Z, 1),
-                        Yaw = player.Entity.SidedPos.Yaw
-                    };
+                    Timestamp = now,
+                    PlayerUid = player.PlayerUID,
+                    X = Math.Round(player.Entity.SidedPos.X, 1),
+                    Y = Math.Round(player.Entity.SidedPos.Y, 1),
+                    Z = Math.Round(player.Entity.SidedPos.Z, 1),
+                    Yaw = player.Entity.SidedPos.Yaw
                 })
-                .Where(rec => rec != null)
                 .ToList();
 
             if (records.Count == 0)
@@ -129,7 +122,8 @@ public class PlayerPositionTrackerModSystem : ModSystem
     {
         if (!IsAuthorized(fromPlayer))
         {
-            Mod.Logger.Warning($"[PlayerPositionTracker] Unauthorized position data request from {fromPlayer.PlayerName}");
+            Mod.Logger.Warning(
+                $"[PlayerPositionTracker] Unauthorized position data request from {fromPlayer.PlayerName}");
             return;
         }
 
@@ -141,19 +135,25 @@ public class PlayerPositionTrackerModSystem : ModSystem
         foreach (var uid in records.Select(r => r.PlayerUid).Distinct())
         {
             var data = _sapi.PlayerData.GetPlayerDataByUid(uid);
-            if (data != null) playerNames[uid] = data.LastKnownPlayername;
+            if (data != null)
+            {
+                playerNames[uid] = data.LastKnownPlayername;
+            }
         }
 
         var dateInfo = string.IsNullOrEmpty(date) ? "available dates" : $"date {date}";
         var playerFilter = request?.PlayerFilter;
         string filterInfo;
         if (string.IsNullOrEmpty(playerFilter) || playerFilter == "__all__")
-            filterInfo = "all players"; 
+        {
+            filterInfo = "all players";
+        }
         else
         {
             var playerData = _sapi.PlayerData.GetPlayerDataByUid(playerFilter);
             filterInfo = playerData != null ? $"player {playerData.LastKnownPlayername}" : $"player {playerFilter}";
         }
+
         var auditMessage = $"[PlayerPositionTracker] {fromPlayer.PlayerName} requested {dateInfo} for {filterInfo}";
         _sapi.Logger.Audit(auditMessage);
         SendDiscordAudit(auditMessage);
@@ -175,7 +175,9 @@ public class PlayerPositionTrackerModSystem : ModSystem
     private void SendDiscordAudit(string message)
     {
         if (string.IsNullOrEmpty(_config?.DiscordBotToken) || string.IsNullOrEmpty(_config?.DiscordChannelId))
+        {
             return;
+        }
 
         try
         {
@@ -241,45 +243,33 @@ public class PlayerPositionTrackerConfig
 [ProtoContract]
 public class PlayerPositionRecord
 {
-    [ProtoMember(1)]
-    public string Timestamp { get; set; }
+    [ProtoMember(1)] public string Timestamp { get; set; }
 
-    [ProtoMember(2)]
-    public string PlayerUid { get; set; }
+    [ProtoMember(2)] public string PlayerUid { get; set; }
 
-    [ProtoMember(3)]
-    public double X { get; set; }
+    [ProtoMember(3)] public double X { get; set; }
 
-    [ProtoMember(4)]
-    public double Y { get; set; }
+    [ProtoMember(4)] public double Y { get; set; }
 
-    [ProtoMember(5)]
-    public double Z { get; set; }
+    [ProtoMember(5)] public double Z { get; set; }
 
-    [ProtoMember(6)]
-    public float Yaw { get; set; }
+    [ProtoMember(6)] public float Yaw { get; set; }
 }
 
 [ProtoContract]
 public class PositionDataRequest
 {
-    [ProtoMember(1)]
-    public string Date { get; set; }
+    [ProtoMember(1)] public string Date { get; set; }
 
-    [ProtoMember(2)]
-    public string PlayerFilter { get; set; }
+    [ProtoMember(2)] public string PlayerFilter { get; set; }
 }
 
 [ProtoContract]
 public class PositionDataResponse
 {
-    [ProtoMember(1)]
-    public List<string> AvailableDates { get; set; }
+    [ProtoMember(1)] public List<string> AvailableDates { get; set; }
 
-    [ProtoMember(2)]
-    public List<PlayerPositionRecord> Records { get; set; }
+    [ProtoMember(2)] public List<PlayerPositionRecord> Records { get; set; }
 
-    [ProtoMember(3)]
-    public Dictionary<string, string> PlayerNames { get; set; }
+    [ProtoMember(3)] public Dictionary<string, string> PlayerNames { get; set; }
 }
-
