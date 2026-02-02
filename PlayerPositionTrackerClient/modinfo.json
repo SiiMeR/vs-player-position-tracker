@@ -1,0 +1,14 @@
+{
+  "type": "code",
+  "modid": "playerpositiontrackerviewer",
+  "name": "PlayerPositionTrackerViewer",
+  "authors": [
+    "SiiMeR"
+  ],
+  "description": "Client-side viewer for player position history on the world map.",
+  "version": "2.4.0",
+  "dependencies": {
+    "game": ""
+  },
+  "Side": "Client"
+}

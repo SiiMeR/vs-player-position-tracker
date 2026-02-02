@@ -26,10 +26,8 @@ public static class Program
 
 public class BuildContext : FrostingContext
 {
-    public const string ProjectName = "PlayerPositionTracker";
+    public static readonly string[] Projects = { "PlayerPositionTrackerServer", "PlayerPositionTrackerClient" };
     public string BuildConfiguration { get; }
-    public string Version { get; }
-    public string Name { get; }
     public bool SkipJsonValidation { get; }
 
     public BuildContext(ICakeContext context)
@@ -37,9 +35,6 @@ public class BuildContext : FrostingContext
     {
         BuildConfiguration = context.Argument("configuration", "Release");
         SkipJsonValidation = context.Argument("skipJsonValidation", false);
-        var modInfo = context.DeserializeJsonFromFile<ModInfo>($"../{ProjectName}/modinfo.json");
-        Version = modInfo.Version;
-        Name = modInfo.ModID;
     }
 }
 
@@ -53,18 +48,21 @@ public sealed class ValidateJsonTask : FrostingTask<BuildContext>
             return;
         }
 
-        var jsonFiles = context.GetFiles($"../{BuildContext.ProjectName}/assets/**/*.json");
-        foreach (var file in jsonFiles)
+        foreach (var project in BuildContext.Projects)
         {
-            try
+            var jsonFiles = context.GetFiles($"../{project}/assets/**/*.json");
+            foreach (var file in jsonFiles)
             {
-                var json = File.ReadAllText(file.FullPath);
-                JToken.Parse(json);
-            }
-            catch (JsonException ex)
-            {
-                throw new Exception(
-                    $"Validation failed for JSON file: {file.FullPath}{Environment.NewLine}{ex.Message}", ex);
+                try
+                {
+                    var json = File.ReadAllText(file.FullPath);
+                    JToken.Parse(json);
+                }
+                catch (JsonException ex)
+                {
+                    throw new Exception(
+                        $"Validation failed for JSON file: {file.FullPath}{Environment.NewLine}{ex.Message}", ex);
+                }
             }
         }
     }
@@ -76,18 +74,20 @@ public sealed class BuildTask : FrostingTask<BuildContext>
 {
     public override void Run(BuildContext context)
     {
-        context.DotNetClean($"../{BuildContext.ProjectName}/{BuildContext.ProjectName}.csproj",
-            new DotNetCleanSettings
-            {
-                Configuration = context.BuildConfiguration
-            });
+        foreach (var project in BuildContext.Projects)
+        {
+            context.DotNetClean($"../{project}/{project}.csproj",
+                new DotNetCleanSettings
+                {
+                    Configuration = context.BuildConfiguration
+                });
 
-
-        context.DotNetPublish($"../{BuildContext.ProjectName}/{BuildContext.ProjectName}.csproj",
-            new DotNetPublishSettings
-            {
-                Configuration = context.BuildConfiguration
-            });
+            context.DotNetPublish($"../{project}/{project}.csproj",
+                new DotNetPublishSettings
+                {
+                    Configuration = context.BuildConfiguration
+                });
+        }
     }
 }
 
@@ -99,21 +99,29 @@ public sealed class PackageTask : FrostingTask<BuildContext>
     {
         context.EnsureDirectoryExists("../Releases");
         context.CleanDirectory("../Releases");
-        context.EnsureDirectoryExists($"../Releases/{context.Name}");
-        context.CopyFiles($"../{BuildContext.ProjectName}/bin/{context.BuildConfiguration}/Mods/mod/publish/*",
-            $"../Releases/{context.Name}");
-        if (context.DirectoryExists($"../{BuildContext.ProjectName}/assets"))
-        {
-            context.CopyDirectory($"../{BuildContext.ProjectName}/assets", $"../Releases/{context.Name}/assets");
-        }
 
-        context.CopyFile($"../{BuildContext.ProjectName}/modinfo.json", $"../Releases/{context.Name}/modinfo.json");
-        if (context.FileExists($"../{BuildContext.ProjectName}/modicon.png"))
+        foreach (var project in BuildContext.Projects)
         {
-            context.CopyFile($"../{BuildContext.ProjectName}/modicon.png", $"../Releases/{context.Name}/modicon.png");
-        }
+            var modInfo = context.DeserializeJsonFromFile<ModInfo>($"../{project}/modinfo.json");
+            var name = modInfo.ModID;
+            var version = modInfo.Version;
 
-        context.Zip($"../Releases/{context.Name}", $"../Releases/{context.Name}_{context.Version}.zip");
+            context.EnsureDirectoryExists($"../Releases/{name}");
+            context.CopyFiles($"../bin/{context.BuildConfiguration}/Mods/{name}/publish/*",
+                $"../Releases/{name}");
+            if (context.DirectoryExists($"../{project}/assets"))
+            {
+                context.CopyDirectory($"../{project}/assets", $"../Releases/{name}/assets");
+            }
+
+            context.CopyFile($"../{project}/modinfo.json", $"../Releases/{name}/modinfo.json");
+            if (context.FileExists($"../{project}/modicon.png"))
+            {
+                context.CopyFile($"../{project}/modicon.png", $"../Releases/{name}/modicon.png");
+            }
+
+            context.Zip($"../Releases/{name}", $"../Releases/{name}_{version}.zip");
+        }
     }
 }
 

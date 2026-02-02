@@ -4,35 +4,22 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
-using ProtoBuf;
-using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
-using Vintagestory.GameContent;
 
 namespace PlayerPositionTracker;
 
-public class PlayerPositionTrackerModSystem : ModSystem
+public class PlayerPositionTrackerServerModSystem : ModSystem
 {
     private const string ModConfigFileName = "playerpositiontrackerconfig.json";
     private const string ChannelName = "playerpositiontracker";
     private static readonly HttpClient HttpClient = new();
     private readonly Dictionary<string, List<PlayerPositionRecord>> _positionsByDate = new();
-    private IClientNetworkChannel _clientChannel;
     private PlayerPositionTrackerConfig _config;
     private string _directory;
-
     private ICoreServerAPI _sapi;
     private IServerNetworkChannel _serverChannel;
-
-    public event Action<PositionDataResponse> OnResponseReceived;
-
-    public override void Start(ICoreAPI api)
-    {
-        var mapManager = api.ModLoader.GetModSystem<WorldMapManager>();
-        mapManager.RegisterMapLayer<PlayerPositionMapLayer>("playerpositiontracker", 3.0);
-    }
 
     public override void StartServerSide(ICoreServerAPI api)
     {
@@ -93,27 +80,12 @@ public class PlayerPositionTrackerModSystem : ModSystem
         }, _config.PositionUpdateIntervalSeconds * 1000);
     }
 
-    public override void StartClientSide(ICoreClientAPI api)
-    {
-        _clientChannel = api.Network.RegisterChannel(ChannelName)
-            .RegisterMessageType<PositionDataRequest>()
-            .RegisterMessageType<PositionDataResponse>()
-            .SetMessageHandler<PositionDataResponse>(OnResponseFromServer);
-
-        WorldMapPatches.Init(api, this);
-    }
-
-    public void RequestDateData(string date, string playerFilter = null)
-    {
-        _clientChannel?.SendPacket(new PositionDataRequest { Date = date ?? "", PlayerFilter = playerFilter });
-    }
-
-    public List<string> GetAvailableDates()
+    private List<string> GetAvailableDates()
     {
         return _positionsByDate.Keys.OrderBy(k => k).ToList();
     }
 
-    public List<PlayerPositionRecord> GetRecordsForDate(string date)
+    private List<PlayerPositionRecord> GetRecordsForDate(string date)
     {
         return _positionsByDate.TryGetValue(date, out var list) ? list : new List<PlayerPositionRecord>();
     }
@@ -194,11 +166,6 @@ public class PlayerPositionTrackerModSystem : ModSystem
         }
     }
 
-    private void OnResponseFromServer(PositionDataResponse response)
-    {
-        OnResponseReceived?.Invoke(response);
-    }
-
     private void LoadFromDisk()
     {
         _positionsByDate.Clear();
@@ -238,38 +205,4 @@ public class PlayerPositionTrackerConfig
     public int PositionUpdateIntervalSeconds { get; set; } = 60;
     public string DiscordBotToken { get; set; } = "";
     public string DiscordChannelId { get; set; } = "";
-}
-
-[ProtoContract]
-public class PlayerPositionRecord
-{
-    [ProtoMember(1)] public string Timestamp { get; set; }
-
-    [ProtoMember(2)] public string PlayerUid { get; set; }
-
-    [ProtoMember(3)] public double X { get; set; }
-
-    [ProtoMember(4)] public double Y { get; set; }
-
-    [ProtoMember(5)] public double Z { get; set; }
-
-    [ProtoMember(6)] public float Yaw { get; set; }
-}
-
-[ProtoContract]
-public class PositionDataRequest
-{
-    [ProtoMember(1)] public string Date { get; set; }
-
-    [ProtoMember(2)] public string PlayerFilter { get; set; }
-}
-
-[ProtoContract]
-public class PositionDataResponse
-{
-    [ProtoMember(1)] public List<string> AvailableDates { get; set; }
-
-    [ProtoMember(2)] public List<PlayerPositionRecord> Records { get; set; }
-
-    [ProtoMember(3)] public Dictionary<string, string> PlayerNames { get; set; }
 }

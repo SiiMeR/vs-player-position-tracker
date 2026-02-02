@@ -39,7 +39,7 @@ public class PlayerPositionMapLayer : MapLayer
     }
 
     private ICoreClientAPI _capi;
-    private PlayerPositionTrackerModSystem _modSystem;
+    private PlayerPositionTrackerClientModSystem _modSystem;
     private readonly Dictionary<string, LoadedTexture> _playerTextures = new();
 
     private List<string> _availableDates = new();
@@ -58,7 +58,7 @@ public class PlayerPositionMapLayer : MapLayer
 
     public PlayerPositionMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink)
     {
-        _modSystem = api.ModLoader.GetModSystem<PlayerPositionTrackerModSystem>();
+        _modSystem = api.ModLoader.GetModSystem<PlayerPositionTrackerClientModSystem>();
 
         if (api.Side == EnumAppSide.Client)
         {

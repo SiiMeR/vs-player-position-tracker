@@ -11,11 +11,11 @@ namespace PlayerPositionTracker;
 public static class WorldMapPatches
 {
     private static ICoreClientAPI _capi;
-    private static PlayerPositionTrackerModSystem _modSystem;
+    private static PlayerPositionTrackerClientModSystem _modSystem;
     private static FieldInfo _tabnamesField;
     private static bool? _lastAuthorized;
 
-    public static void Init(ICoreClientAPI capi, PlayerPositionTrackerModSystem modSystem)
+    public static void Init(ICoreClientAPI capi, PlayerPositionTrackerClientModSystem modSystem)
     {
         _capi = capi;
         _modSystem = modSystem;
