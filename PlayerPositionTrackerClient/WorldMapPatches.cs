@@ -24,34 +24,60 @@ public static class WorldMapPatches
 
         var harmony = new Harmony("playerpositiontracker");
 
-        var getTabsOrdered = typeof(WorldMapManager).GetMethod("getTabsOrdered", BindingFlags.NonPublic | BindingFlags.Instance);
-        var getTabsOrderedPostfix = typeof(WorldMapPatches).GetMethod(nameof(Postfix_getTabsOrdered), BindingFlags.Public | BindingFlags.Static);
+        var getTabsOrdered =
+            typeof(WorldMapManager).GetMethod("getTabsOrdered", BindingFlags.NonPublic | BindingFlags.Instance);
+        var getTabsOrderedPostfix = typeof(WorldMapPatches).GetMethod(nameof(Postfix_getTabsOrdered),
+            BindingFlags.Public | BindingFlags.Static);
         harmony.Patch(getTabsOrdered, postfix: new HarmonyMethod(getTabsOrderedPostfix));
 
-        var toggleMap = typeof(WorldMapManager).GetMethod(nameof(WorldMapManager.ToggleMap), BindingFlags.Public | BindingFlags.Instance);
-        var toggleMapPrefix = typeof(WorldMapPatches).GetMethod(nameof(Prefix_ToggleMap), BindingFlags.Public | BindingFlags.Static);
-        harmony.Patch(toggleMap, prefix: new HarmonyMethod(toggleMapPrefix));
+        var toggleMap = typeof(WorldMapManager).GetMethod(nameof(WorldMapManager.ToggleMap),
+            BindingFlags.Public | BindingFlags.Instance);
+        var toggleMapPrefix =
+            typeof(WorldMapPatches).GetMethod(nameof(Prefix_ToggleMap), BindingFlags.Public | BindingFlags.Static);
+        harmony.Patch(toggleMap, new HarmonyMethod(toggleMapPrefix));
 
-        var onTabClicked = typeof(GuiDialogWorldMap).GetMethod("OnTabClicked", BindingFlags.NonPublic | BindingFlags.Instance);
-        var onTabClickedPrefix = typeof(WorldMapPatches).GetMethod(nameof(Prefix_OnTabClicked), BindingFlags.Public | BindingFlags.Static);
-        harmony.Patch(onTabClicked, prefix: new HarmonyMethod(onTabClickedPrefix));
+        var onTabClicked =
+            typeof(GuiDialogWorldMap).GetMethod("OnTabClicked", BindingFlags.NonPublic | BindingFlags.Instance);
+        var onTabClickedPrefix =
+            typeof(WorldMapPatches).GetMethod(nameof(Prefix_OnTabClicked), BindingFlags.Public | BindingFlags.Static);
+        harmony.Patch(onTabClicked, new HarmonyMethod(onTabClickedPrefix));
 
-        var zoomAdd = typeof(GuiElementMap).GetMethod(nameof(GuiElementMap.ZoomAdd), BindingFlags.Public | BindingFlags.Instance);
-        var zoomAddPrefix = typeof(WorldMapPatches).GetMethod(nameof(Prefix_ZoomAdd), BindingFlags.Public | BindingFlags.Static);
-        harmony.Patch(zoomAdd, prefix: new HarmonyMethod(zoomAddPrefix));
+        var zoomAdd = typeof(GuiElementMap).GetMethod(nameof(GuiElementMap.ZoomAdd),
+            BindingFlags.Public | BindingFlags.Instance);
+        var zoomAddPrefix =
+            typeof(WorldMapPatches).GetMethod(nameof(Prefix_ZoomAdd), BindingFlags.Public | BindingFlags.Static);
+        harmony.Patch(zoomAdd, new HarmonyMethod(zoomAddPrefix));
+
+        var onMouseMove = typeof(GuiElementMap).GetMethod(nameof(GuiElementMap.OnMouseMove),
+            BindingFlags.Public | BindingFlags.Instance);
+        var onMouseMovePrefix =
+            typeof(WorldMapPatches).GetMethod(nameof(Prefix_OnMouseMove), BindingFlags.Public | BindingFlags.Static);
+        harmony.Patch(onMouseMove, new HarmonyMethod(onMouseMovePrefix));
     }
 
     public static void Postfix_getTabsOrdered(ref List<string> __result)
     {
-        if (_capi == null || IsClientAuthorized()) return;
+        if (_capi == null || IsClientAuthorized())
+        {
+            return;
+        }
+
         __result.Remove("playerpositiontracker");
     }
 
     public static void Prefix_ToggleMap(WorldMapManager __instance)
     {
-        if (__instance.worldMapDlg == null || __instance.worldMapDlg.IsOpened()) return;
+        if (__instance.worldMapDlg == null || __instance.worldMapDlg.IsOpened())
+        {
+            return;
+        }
+
         var authorized = IsClientAuthorized();
-        if (authorized == _lastAuthorized) return;
+        if (authorized == _lastAuthorized)
+        {
+            return;
+        }
+
         _lastAuthorized = authorized;
         __instance.worldMapDlg.Dispose();
         __instance.worldMapDlg = null;
@@ -59,17 +85,34 @@ public static class WorldMapPatches
 
     public static bool Prefix_OnTabClicked(GuiDialogWorldMap __instance, int arg1, GuiTab tab)
     {
-        if (_tabnamesField == null) return true;
+        if (_tabnamesField == null)
+        {
+            return true;
+        }
+
         var tabnames = _tabnamesField.GetValue(__instance) as List<string>;
-        if (tabnames == null || arg1 >= tabnames.Count) return true;
+        if (tabnames == null || arg1 >= tabnames.Count)
+        {
+            return true;
+        }
 
         var tabCode = tabnames[arg1];
-        if (tabCode != "playerpositiontracker") return true;
-        if (!tab.Active) return true;
+        if (tabCode != "playerpositiontracker")
+        {
+            return true;
+        }
+
+        if (!tab.Active)
+        {
+            return true;
+        }
 
         var mapManager = _capi.ModLoader.GetModSystem<WorldMapManager>();
         var layer = mapManager.MapLayers.FirstOrDefault(l => l.LayerGroupCode == "playerpositiontracker");
-        if (layer == null) return true;
+        if (layer == null)
+        {
+            return true;
+        }
 
         tab.Active = false;
         layer.Active = false;
@@ -78,19 +121,38 @@ public static class WorldMapPatches
         return false;
     }
 
+    public static bool Prefix_OnMouseMove(GuiElementMap __instance, MouseEvent args,
+        ref int ___prevMouseX, ref int ___prevMouseY)
+    {
+        if (!IsTrackerLayerActive()) return true;
+   
+        if (__instance.IsDragingMap)
+        {
+            __instance.CurrentBlockViewBounds.Translate(
+                (float)(-(args.X - ___prevMouseX)) * 10f / __instance.ZoomLevel, 0.0,
+                (float)(-(args.Y - ___prevMouseY)) * 10f / __instance.ZoomLevel);
+            ___prevMouseX = args.X;
+            ___prevMouseY = args.Y;
+        }
+
+        return false;
+    }
+
     public static bool Prefix_ZoomAdd(GuiElementMap __instance, float zoomDiff, float px, float pz)
     {
         if (!IsTrackerLayerActive()) return true;
 
-        float minZoom = 0.0625f;
+        var minZoom = 0.0625f;
         if ((zoomDiff < 0f && __instance.ZoomLevel + zoomDiff < minZoom) ||
             (zoomDiff > 0f && __instance.ZoomLevel + zoomDiff > 6f))
+        { 
             return false;
+        }
 
         __instance.ZoomLevel += zoomDiff;
-        double scale = 1f / __instance.ZoomLevel;
-        double dw = __instance.Bounds.InnerWidth * scale - __instance.CurrentBlockViewBounds.Width;
-        double dh = __instance.Bounds.InnerHeight * scale - __instance.CurrentBlockViewBounds.Length;
+        double scale = 10f / __instance.ZoomLevel;
+        var dw = __instance.Bounds.InnerWidth * scale - __instance.CurrentBlockViewBounds.Width;
+        var dh = __instance.Bounds.InnerHeight * scale - __instance.CurrentBlockViewBounds.Length;
         __instance.CurrentBlockViewBounds.X2 += dw;
         __instance.CurrentBlockViewBounds.Z2 += dh;
         __instance.CurrentBlockViewBounds.Translate(-dw * px, 0.0, -dh * pz);
@@ -110,7 +172,11 @@ public static class WorldMapPatches
             "The use of this layer is audited. Are you sure you want to continue?",
             confirmed =>
             {
-                if (!confirmed) return;
+                if (!confirmed)
+                {
+                    return;
+                }
+
                 tab.Active = true;
                 layer.Active = true;
                 _modSystem.RequestDateData("");

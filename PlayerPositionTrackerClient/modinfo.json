@@ -6,7 +6,7 @@
     "SiiMeR"
   ],
   "description": "Client-side viewer for player position history on the world map.",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "dependencies": {
     "game": ""
   },
