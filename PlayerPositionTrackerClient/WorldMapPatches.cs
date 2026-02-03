@@ -35,6 +35,10 @@ public static class WorldMapPatches
         var onTabClicked = typeof(GuiDialogWorldMap).GetMethod("OnTabClicked", BindingFlags.NonPublic | BindingFlags.Instance);
         var onTabClickedPrefix = typeof(WorldMapPatches).GetMethod(nameof(Prefix_OnTabClicked), BindingFlags.Public | BindingFlags.Static);
         harmony.Patch(onTabClicked, prefix: new HarmonyMethod(onTabClickedPrefix));
+
+        var zoomAdd = typeof(GuiElementMap).GetMethod(nameof(GuiElementMap.ZoomAdd), BindingFlags.Public | BindingFlags.Instance);
+        var zoomAddPrefix = typeof(WorldMapPatches).GetMethod(nameof(Prefix_ZoomAdd), BindingFlags.Public | BindingFlags.Static);
+        harmony.Patch(zoomAdd, prefix: new HarmonyMethod(zoomAddPrefix));
     }
 
     public static void Postfix_getTabsOrdered(ref List<string> __result)
@@ -72,6 +76,32 @@ public static class WorldMapPatches
 
         ShowConfirmationDialog(__instance, layer, tab);
         return false;
+    }
+
+    public static bool Prefix_ZoomAdd(GuiElementMap __instance, float zoomDiff, float px, float pz)
+    {
+        if (!IsTrackerLayerActive()) return true;
+
+        float minZoom = 0.0625f;
+        if ((zoomDiff < 0f && __instance.ZoomLevel + zoomDiff < minZoom) ||
+            (zoomDiff > 0f && __instance.ZoomLevel + zoomDiff > 6f))
+            return false;
+
+        __instance.ZoomLevel += zoomDiff;
+        double scale = 1f / __instance.ZoomLevel;
+        double dw = __instance.Bounds.InnerWidth * scale - __instance.CurrentBlockViewBounds.Width;
+        double dh = __instance.Bounds.InnerHeight * scale - __instance.CurrentBlockViewBounds.Length;
+        __instance.CurrentBlockViewBounds.X2 += dw;
+        __instance.CurrentBlockViewBounds.Z2 += dh;
+        __instance.CurrentBlockViewBounds.Translate(-dw * px, 0.0, -dh * pz);
+        __instance.EnsureMapFullyLoaded();
+        return false;
+    }
+
+    private static bool IsTrackerLayerActive()
+    {
+        var mapManager = _capi?.ModLoader?.GetModSystem<WorldMapManager>();
+        return mapManager?.MapLayers?.Any(l => l.LayerGroupCode == "playerpositiontracker" && l.Active) == true;
     }
 
     private static void ShowConfirmationDialog(GuiDialogWorldMap mapDlg, MapLayer layer, GuiTab tab)
