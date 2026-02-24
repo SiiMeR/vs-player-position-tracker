@@ -16,6 +16,7 @@ public class PlayerPositionTrackerServerModSystem : ModSystem
     private const string ChannelName = "playerpositiontracker";
     private static readonly HttpClient HttpClient = new();
     private readonly Dictionary<string, List<PlayerPositionRecord>> _positionsByDate = new();
+    private readonly HashSet<string> _dirtyDates = new();
     private PlayerPositionTrackerConfig _config;
     private string _directory;
     private ICoreServerAPI _sapi;
@@ -77,6 +78,7 @@ public class PlayerPositionTrackerServerModSystem : ModSystem
             }
 
             list.AddRange(records);
+            _dirtyDates.Add(dateKey);
         }, _config.PositionUpdateIntervalSeconds * 1000);
     }
 
@@ -190,13 +192,13 @@ public class PlayerPositionTrackerServerModSystem : ModSystem
 
     private void SaveToDisk()
     {
-        foreach (var (dateKey, records) in _positionsByDate)
+        foreach (var dateKey in _dirtyDates)
         {
+            if (!_positionsByDate.TryGetValue(dateKey, out var records)) continue;
             var path = Path.Combine(_directory, $"playerpositions-{dateKey}.json");
             File.WriteAllText(path, JsonUtil.ToString(records));
         }
-
-        _sapi.Logger.Debug($"[PlayerPositionTracker] Saved position data for {_positionsByDate.Count} days.");
+        _dirtyDates.Clear();
     }
 }
 
