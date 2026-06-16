@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <VINTAGE_STORY>C:\Users\siimr\AppData\Roaming\VSLGameVersions\1.22.2</VINTAGE_STORY>
+        <VINTAGE_STORY_DATA>C:\Users\siimr\AppData\Roaming\VSLInstallations\1.22.2</VINTAGE_STORY_DATA>
+        <TargetFramework>net10.0</TargetFramework>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <OutputPath>..\bin\$(Configuration)\Mods\playerpositiontrackerviewer</OutputPath>
     </PropertyGroup>

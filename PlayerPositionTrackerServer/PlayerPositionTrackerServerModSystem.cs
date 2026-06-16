@@ -84,7 +84,7 @@ public class PlayerPositionTrackerServerModSystem : ModSystem
 
     private List<string> GetAvailableDates()
     {
-        return _positionsByDate.Keys.OrderBy(k => k).ToList();
+        return _positionsByDate.Keys.OrderByDescending(k => k).ToList();
     }
 
     private List<PlayerPositionRecord> GetRecordsForDate(string date)
